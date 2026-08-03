@@ -1,0 +1,19 @@
+# Compiled binary
+/go-video-compressor
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# SQLite database and its write-ahead-log sidecars
+database/*.db
+database/*.db-wal
+database/*.db-shm
+
+# User media: uploads and compressed results are runtime data, not source.
+# The directories themselves are kept so a fresh clone has somewhere to write.
+uploads/*
+outputs/*
+!uploads/.gitkeep
+!outputs/.gitkeep
