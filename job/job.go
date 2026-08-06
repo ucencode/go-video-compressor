@@ -337,10 +337,10 @@ func (q *Queue) process(j Job) {
 	q.setStatus(j.ID, StatusEncoding)
 
 	req := EncodeRequest{
-		Input:    j.Path,
-		Output:   out,
-		Preset:   preset,
-		Duration: info.Duration,
+		Input:  j.Path,
+		Output: out,
+		Preset: preset,
+		Source: info,
 	}
 	err = Encode(context.Background(), q.enc, req, func(frac float64) {
 		q.tracker.update(j.ID, func(s *Status) {

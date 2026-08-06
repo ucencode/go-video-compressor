@@ -55,11 +55,11 @@ Request bodies are capped at 8 GiB.
 
 ## Presets
 
-| Key        | Label        | Resolution     | Quality (CRF/CQ) | Audio |
-| ---------- | ------------ | -------------- | ---------------- | ----- |
-| `quality`  | High quality | up to 1080p    | 21               | 160k  |
-| `balanced` | Balanced     | up to 1080p    | 26               | 128k  |
-| `small`    | Small        | up to 720p     | 30               | 96k   |
+| Key        | Label        | Resolution     | Quality (CRF/CQ) | Audio     |
+| ---------- | ------------ | -------------- | ---------------- | --------- |
+| `quality`  | High quality | up to 1080p    | 21               | ≤ 160k    |
+| `balanced` | Balanced     | up to 1080p    | 26               | ≤ 128k    |
+| `small`    | Small        | up to 720p     | 30               | ≤ 96k     |
 
 The resolution cap applies to the **shorter** side, so it means the same thing in either
 orientation: a 1080p preset passes a 1920x1080 landscape clip and a 1080x1920 portrait clip
@@ -68,6 +68,29 @@ through at full size, and brings 4K down to 1080 across the narrow dimension eit
 Videos are only ever scaled **down** — a 720p source stays 720p under the 1080p presets. Quality
 is constant-rate, so the output size depends on the content rather than a fixed bitrate; the UI
 shows a running estimate extrapolated from bytes written so far.
+
+### Presets: Ceilings, Not Targets
+
+When you select a preset, the specified bitrates act as a **maximum limit**, not a forced target. The encoder is designed to never spend more bits than the source file originally contained. 
+
+#### 🎧 Audio Handling
+* **No Artificial Upscaling:** A 128k source processed under a 160k `quality` preset will output at 128k, preventing wasted space.
+* **Smart Stream Copying:** If the source is already AAC and at or below the preset limit, the stream is copied verbatim. This avoids the quality degradation of a second lossy pass.
+* **Codec-Aware Comparisons:** More efficient codecs are evaluated fairly. For example, a 96k Opus track is treated as its ~128k AAC equivalent, rather than being unfairly capped at 96k.
+* **Lossless Sources:** Uncompressed or lossless audio is encoded exactly to the preset's target value.
+
+#### 🎬 Video Handling
+* **Source-Capped Bitrate:** The source file's original bitrate serves as a hard ceiling (applied via `-maxrate` and `-bufsize`). 
+* **Prevents CRF Bloat:** Without a ceiling, CRF encoding will waste massive amounts of data trying to flawlessly reproduce a heavily compressed file's artifacts. (For example, preventing an 86 kbps low-quality clip from ballooning into a 220 kbps file with zero visual improvement).
+* **Unobtrusive Limits:** For standard, high-quality footage, this ceiling sits well above what CRF naturally requests and will not bottleneck your encode.
+
+---
+
+**How Bitrate Detection Works**
+To enforce these ceilings, the tool needs to know the source bitrate. 
+* **MP4-family containers:** Read instantly from stream metadata.
+* **Matroska (MKV) & WebM:** Calculated dynamically by sampling packets, as they do not publish stream bitrates.
+* **Fallback:** If the source bitrate genuinely cannot be determined, the encoder defaults to the preset's exact values.
 
 Presets live in [`job/preset.go`](job/preset.go) and are served to the frontend, so adding one is
 a single struct literal.

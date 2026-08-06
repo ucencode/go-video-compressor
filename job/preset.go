@@ -11,9 +11,9 @@ type Preset struct {
 	// MaxShortSide caps the smaller of the two dimensions, so "1080p" means the
 	// same amount of detail whether the video is landscape or portrait. Only ever
 	// downscales, never upscales.
-	MaxShortSide int    `json:"-"`
-	Quality      int    `json:"-"` // CRF (libx264) / CQ (nvenc)
-	AudioBitrate string `json:"-"`
+	MaxShortSide int `json:"-"`
+	Quality      int `json:"-"` // CRF (libx264) / CQ (nvenc)
+	AudioKbps    int `json:"-"` // ceiling, not a target: see audioArgs
 }
 
 // Presets is ordered for display; the API returns it as a list so the frontend
@@ -25,7 +25,7 @@ var Presets = []Preset{
 		Description:  "1080p · near-original",
 		MaxShortSide: 1080,
 		Quality:      21,
-		AudioBitrate: "160k",
+		AudioKbps:    160,
 	},
 	{
 		Key:          "balanced",
@@ -33,7 +33,7 @@ var Presets = []Preset{
 		Description:  "1080p · good size",
 		MaxShortSide: 1080,
 		Quality:      26,
-		AudioBitrate: "128k",
+		AudioKbps:    128,
 	},
 	{
 		Key:          "small",
@@ -41,7 +41,7 @@ var Presets = []Preset{
 		Description:  "720p · smallest file",
 		MaxShortSide: 720,
 		Quality:      30,
-		AudioBitrate: "96k",
+		AudioKbps:    96,
 	},
 }
 

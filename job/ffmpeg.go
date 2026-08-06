@@ -64,6 +64,12 @@ type VideoInfo struct {
 	Duration float64
 	Width    int
 	Height   int
+
+	// Bitrates are bits/sec and 0 when they could not be determined; callers
+	// must treat 0 as "unknown" rather than "silent" or "empty".
+	VideoBitrate int
+	AudioCodec   string // "" when the file carries no audio stream
+	AudioBitrate int
 }
 
 // Probe reads stream metadata. Duration comes from the container format, which
@@ -71,8 +77,7 @@ type VideoInfo struct {
 func Probe(path string) (VideoInfo, error) {
 	cmd := exec.Command("ffprobe",
 		"-v", "error",
-		"-select_streams", "v:0",
-		"-show_entries", "stream=width,height:format=duration",
+		"-show_entries", "stream=codec_type,codec_name,width,height,bit_rate:format=duration,bit_rate",
 		"-of", "json",
 		path,
 	)
@@ -88,36 +93,125 @@ func Probe(path string) (VideoInfo, error) {
 
 	var parsed struct {
 		Streams []struct {
-			Width  int `json:"width"`
-			Height int `json:"height"`
+			CodecType string `json:"codec_type"`
+			CodecName string `json:"codec_name"`
+			Width     int    `json:"width"`
+			Height    int    `json:"height"`
+			BitRate   string `json:"bit_rate"`
 		} `json:"streams"`
 		Format struct {
 			Duration string `json:"duration"`
+			BitRate  string `json:"bit_rate"`
 		} `json:"format"`
 	}
 	if err := json.Unmarshal(out, &parsed); err != nil {
 		return VideoInfo{}, fmt.Errorf("parse ffprobe output: %w", err)
 	}
-	if len(parsed.Streams) == 0 {
-		return VideoInfo{}, fmt.Errorf("no video stream found")
-	}
 
-	info := VideoInfo{
-		Width:  parsed.Streams[0].Width,
-		Height: parsed.Streams[0].Height,
-	}
+	var info VideoInfo
 	// A missing or unparseable duration is not fatal: encoding still works,
 	// progress just can't be expressed as a percentage.
 	info.Duration, _ = strconv.ParseFloat(parsed.Format.Duration, 64)
+
+	var haveVideo bool
+	for _, s := range parsed.Streams {
+		switch {
+		case s.CodecType == "video" && !haveVideo:
+			haveVideo = true
+			info.Width, info.Height = s.Width, s.Height
+			info.VideoBitrate = atoiSafe(s.BitRate)
+		case s.CodecType == "audio" && info.AudioCodec == "":
+			info.AudioCodec = s.CodecName
+			info.AudioBitrate = atoiSafe(s.BitRate)
+		}
+	}
+	if !haveVideo {
+		return VideoInfo{}, fmt.Errorf("no video stream found")
+	}
+
+	// Only MP4-family containers report per-stream bit_rate; Matroska and WebM
+	// omit it entirely, so fall back to measuring the streams themselves.
+	if info.AudioCodec != "" && info.AudioBitrate == 0 {
+		info.AudioBitrate = measureBitrate(path, "a:0")
+	}
+	if info.VideoBitrate == 0 {
+		// The container total minus audio is cheap and close enough for a
+		// ceiling; measuring packets is the fallback when even that is missing.
+		if total := atoiSafe(parsed.Format.BitRate); total > info.AudioBitrate {
+			info.VideoBitrate = total - info.AudioBitrate
+		} else {
+			info.VideoBitrate = measureBitrate(path, "v:0")
+		}
+	}
 	return info, nil
+}
+
+// measureBitrate estimates a stream's bitrate by summing packet sizes over the
+// first probeWindow seconds. Reading the whole stream would mean walking an
+// entire multi-gigabyte upload just to pick an encoder ceiling. Returns 0 if the
+// stream can't be measured.
+func measureBitrate(path, stream string) int {
+	cmd := exec.Command("ffprobe",
+		"-v", "error",
+		"-select_streams", stream,
+		"-read_intervals", fmt.Sprintf("%%+%d", probeWindow),
+		"-show_entries", "packet=size,duration_time",
+		"-of", "json",
+		path,
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+
+	// JSON rather than csv: ffprobe emits these fields in its own order, not the
+	// order they were asked for, and pads some containers with a trailing empty
+	// field, so parsing by position reads sizes as durations.
+	var parsed struct {
+		Packets []struct {
+			Size         string `json:"size"`
+			DurationTime string `json:"duration_time"`
+		} `json:"packets"`
+	}
+	if json.Unmarshal(out, &parsed) != nil {
+		return 0
+	}
+
+	var bytes, seconds float64
+	for _, p := range parsed.Packets {
+		b, err := strconv.ParseFloat(p.Size, 64)
+		if err != nil {
+			continue
+		}
+		d, err := strconv.ParseFloat(p.DurationTime, 64)
+		if err != nil {
+			continue
+		}
+		bytes += b
+		seconds += d
+	}
+	if seconds <= 0 {
+		return 0
+	}
+	return int(bytes * 8 / seconds)
+}
+
+const probeWindow = 30 // seconds of packets sampled by measureBitrate
+
+func atoiSafe(s string) int {
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
 }
 
 // EncodeRequest describes one transcode.
 type EncodeRequest struct {
-	Input    string
-	Output   string
-	Preset   Preset
-	Duration float64 // seconds, from Probe; 0 disables progress reporting
+	Input  string
+	Output string
+	Preset Preset
+	Source VideoInfo // from Probe; caps the preset so a weak source is never "upgraded"
 }
 
 // Encode transcodes Input to Output, calling onProgress with a 0..1 fraction as
@@ -130,9 +224,9 @@ func Encode(ctx context.Context, enc Encoder, r EncodeRequest, onProgress func(f
 		"-vf", scaleFilter(r.Preset.MaxShortSide),
 		"-pix_fmt", "yuv420p",
 	}
-	args = append(args, videoArgs(enc, r.Preset)...)
+	args = append(args, videoArgs(enc, r.Preset, r.Source)...)
+	args = append(args, audioArgs(r.Preset, r.Source)...)
 	args = append(args,
-		"-c:a", "aac", "-b:a", r.Preset.AudioBitrate,
 		"-movflags", "+faststart",
 		"-progress", "pipe:1", "-nostats",
 		r.Output,
@@ -152,7 +246,7 @@ func Encode(ctx context.Context, enc Encoder, r EncodeRequest, onProgress func(f
 	}
 
 	// Drain the progress stream to completion before Wait, which closes the pipe.
-	readProgress(stdout, r.Duration, onProgress)
+	readProgress(stdout, r.Source.Duration, onProgress)
 
 	if err := cmd.Wait(); err != nil {
 		if msg := stderr.String(); msg != "" {
@@ -177,10 +271,11 @@ func scaleFilter(max int) string {
 	return fmt.Sprintf("scale=w='if(gt(iw,ih),-2,%s)':h='if(gt(iw,ih),%s,-2)'", portrait, landscape)
 }
 
-func videoArgs(enc Encoder, p Preset) []string {
+func videoArgs(enc Encoder, p Preset, src VideoInfo) []string {
+	var args []string
 	if enc.Name == "h264_nvenc" {
 		// -b:v 0 puts NVENC's VBR mode into pure constant-quality.
-		return []string{
+		args = []string{
 			"-c:v", "h264_nvenc",
 			"-preset", "p5",
 			"-tune", "hq",
@@ -189,12 +284,93 @@ func videoArgs(enc Encoder, p Preset) []string {
 			"-b:v", "0",
 			"-spatial-aq", "1",
 		}
+	} else {
+		args = []string{
+			"-c:v", "libx264",
+			"-preset", "medium",
+			"-crf", strconv.Itoa(p.Quality),
+		}
 	}
-	return []string{
-		"-c:v", "libx264",
-		"-preset", "medium",
-		"-crf", strconv.Itoa(p.Quality),
+
+	// Constant quality alone will happily spend more bits than the source ever
+	// had: re-encoding an already-compressed 86kbps clip at CRF 21 produces a
+	// ~220kbps file that is 2.5x larger and no better, because the CRF target is
+	// faithfully reproducing the source's own compression artifacts. Ceiling the
+	// rate at what the source used makes that impossible. For normal footage the
+	// ceiling sits far above what CRF asks for and never binds — and when we
+	// downscale, the source's rate is more headroom still.
+	if src.VideoBitrate > 0 {
+		args = append(args,
+			"-maxrate", strconv.Itoa(src.VideoBitrate),
+			"-bufsize", strconv.Itoa(src.VideoBitrate*2),
+		)
 	}
+	return args
+}
+
+// audioBitrateLadder holds the bitrates encoders and encoding GUIs actually use.
+// Measured rates drift a little from their nominal value — a 128k AAC stream
+// probes as ~123k — so a source is snapped up to its rung before being compared
+// against the preset, otherwise that noise alone would talk us into 123k.
+var audioBitrateLadder = []int{32, 48, 64, 96, 128, 160, 192, 224, 256, 320}
+
+// audioArgs picks the audio encoding for a source, capping the preset at what
+// the source actually carries. Audio bitrate is a ceiling, not a target: nothing
+// is recovered by encoding a 128k source at 160k, it just costs bytes.
+func audioArgs(p Preset, src VideoInfo) []string {
+	if src.AudioCodec == "" {
+		return nil // -map 0:a? already made the audio stream optional
+	}
+
+	target := p.AudioKbps
+	// Lossless sources carry no bitrate worth preserving — any lossy target is a
+	// downgrade — so they take the preset as-is.
+	if src.AudioBitrate > 0 && !isLosslessAudio(src.AudioCodec) {
+		equivalent := float64(src.AudioBitrate) / 1000 * aacEquivalence(src.AudioCodec)
+		source := snapUpToLadder(int(equivalent + 0.5))
+		if source < target {
+			target = source
+		}
+		// An AAC source already at or under the preset is best left alone:
+		// re-encoding it is a second lossy pass over already-lossy audio, and
+		// buys no space at the same bitrate.
+		if src.AudioCodec == "aac" && source <= p.AudioKbps {
+			return []string{"-c:a", "copy"}
+		}
+	}
+	return []string{"-c:a", "aac", "-b:a", fmt.Sprintf("%dk", target)}
+}
+
+// aacEquivalence converts a source bitrate into the AAC bitrate that sounds
+// about the same. Codecs are not interchangeable at equal rates: 96k Opus is
+// roughly 128k AAC, so capping AAC at 96k just because the source said 96k
+// would throw away quality the source actually had.
+func aacEquivalence(codec string) float64 {
+	switch codec {
+	case "opus", "vorbis":
+		return 1.3
+	default:
+		// AAC maps to itself; MP3/AC-3 and friends are less efficient than AAC,
+		// so treating them 1:1 errs toward keeping bits rather than dropping them.
+		return 1
+	}
+}
+
+func isLosslessAudio(codec string) bool {
+	switch codec {
+	case "flac", "alac", "truehd", "mlp", "wavpack", "tta", "ape":
+		return true
+	}
+	return strings.HasPrefix(codec, "pcm_")
+}
+
+func snapUpToLadder(kbps int) int {
+	for _, rung := range audioBitrateLadder {
+		if kbps <= rung {
+			return rung
+		}
+	}
+	return kbps
 }
 
 // readProgress consumes ffmpeg's -progress stream (key=value lines) and
