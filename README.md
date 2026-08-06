@@ -61,6 +61,10 @@ Request bodies are capped at 8 GiB.
 | `balanced` | Balanced     | up to 1080p    | 26               | 128k  |
 | `small`    | Small        | up to 720p     | 30               | 96k   |
 
+The resolution cap applies to the **shorter** side, so it means the same thing in either
+orientation: a 1080p preset passes a 1920x1080 landscape clip and a 1080x1920 portrait clip
+through at full size, and brings 4K down to 1080 across the narrow dimension either way.
+
 Videos are only ever scaled **down** — a 720p source stays 720p under the 1080p presets. Quality
 is constant-rate, so the output size depends on the content rather than a fixed bitrate; the UI
 shows a running estimate extrapolated from bytes written so far.

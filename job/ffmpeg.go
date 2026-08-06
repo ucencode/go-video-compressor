@@ -127,9 +127,7 @@ func Encode(ctx context.Context, enc Encoder, r EncodeRequest, onProgress func(f
 		"-hide_banner", "-nostdin", "-y",
 		"-i", r.Input,
 		"-map", "0:v:0", "-map", "0:a?",
-		// Downscale only: min() leaves already-small videos untouched, and -2
-		// keeps the width even (required by yuv420p).
-		"-vf", fmt.Sprintf("scale=-2:'min(%d,ih)'", r.Preset.MaxHeight),
+		"-vf", scaleFilter(r.Preset.MaxShortSide),
 		"-pix_fmt", "yuv420p",
 	}
 	args = append(args, videoArgs(enc, r.Preset)...)
@@ -163,6 +161,20 @@ func Encode(ctx context.Context, enc Encoder, r EncodeRequest, onProgress func(f
 		return fmt.Errorf("ffmpeg: %w", err)
 	}
 	return nil
+}
+
+// scaleFilter builds a -vf value that caps the shorter dimension at max,
+// leaving the longer one to follow the aspect ratio. Constraining the height
+// instead would penalise portrait video: a 1080x1920 phone clip would come out
+// at 608x1080 under the same preset that leaves 1920x1080 untouched.
+//
+// Each branch downscales only — min() leaves already-small videos alone — and
+// rounds to an even number, which yuv420p requires; -2 does the same rounding
+// for the unconstrained side.
+func scaleFilter(max int) string {
+	landscape := fmt.Sprintf("trunc(min(%d,ih)/2)*2", max)
+	portrait := fmt.Sprintf("trunc(min(%d,iw)/2)*2", max)
+	return fmt.Sprintf("scale=w='if(gt(iw,ih),-2,%s)':h='if(gt(iw,ih),%s,-2)'", portrait, landscape)
 }
 
 func videoArgs(enc Encoder, p Preset) []string {
