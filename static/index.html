@@ -15,6 +15,11 @@
     --accent-dim: #2a4a80;
     --ok: #34c77b;
     --err: #ff5c5c;
+    /* Size savings, tiered: a good result and an excellent one share a hue, the
+       excellent one deeper and more saturated. Both are light enough to stay
+       readable as small bold text on --panel. */
+    --save: #23cc73;
+    --save-major: #0cb65b;
   }
   * { box-sizing: border-box; }
   body {
@@ -114,6 +119,10 @@
     gap: 8px;
   }
   .row-meta .err { color: var(--err); word-break: break-word; }
+  .row-meta .delta { font-weight: 600; }
+  .row-meta .delta.smaller { color: var(--save); }
+  .row-meta .delta.smaller.major { color: var(--save-major); }
+  .row-meta .delta.larger { color: var(--err); }
   .row-pct { font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
 
   .progress-bar-bg {
@@ -391,11 +400,16 @@ function jobRow(j) {
     text('div', 'row-pct', showPct ? pct(j.overall_progress) : ''),
   );
 
-  const meta = [statusLabel(j.status)];
-  if (j.estimated_size_mb) meta.push(`est. ${j.estimated_size_mb} MB`);
-  if (j.encoder) meta.push(j.encoder);
+  // The estimate is withheld until the encode is a few percent in, so the live
+  // delta appears alongside it and settles as the extrapolation converges.
+  const meta = metaLine([
+    statusLabel(j.status),
+    j.estimated_size_mb ? `est. ${j.estimated_size_mb} MB` : null,
+    sizeDelta(j.source_size, j.estimated_size_mb * 1024 * 1024, true),
+    j.encoder,
+  ]);
 
-  row.append(main, text('div', 'row-meta', meta.join(' · ')), bar(showPct ? j.overall_progress : 0));
+  row.append(main, meta, bar(showPct ? j.overall_progress : 0));
   return row;
 }
 
@@ -436,7 +450,11 @@ function successRow(j) {
   const sizes = j.source_size && j.output_size
     ? `${size(j.source_size)} → ${size(j.output_size)}`
     : size(j.output_size);
-  row.append(text('div', 'row-meta', [sizes, date(j.created_at)].join(' · ')));
+  row.append(metaLine([
+    sizes,
+    sizeDelta(j.source_size, j.output_size),
+    date(j.created_at),
+  ]));
 
   const actions = el('div', 'actions');
   const link = el('a', 'primary');
@@ -483,6 +501,20 @@ function button(label, className, onClick) {
   return b;
 }
 
+// metaLine builds a .row-meta line from a list of parts, skipping empty ones and
+// separating the rest with dots. A part is either a plain string or a
+// {label, className} object, which is how a piece gets its own colour.
+function metaLine(parts) {
+  const wrap = el('div', 'row-meta');
+  parts.filter(Boolean).forEach((part, i) => {
+    if (i) wrap.append(text('span', '', '·'));
+    wrap.append(typeof part === 'string'
+      ? text('span', '', part)
+      : text('span', part.className, part.label));
+  });
+  return wrap;
+}
+
 function bar(percent) {
   const wrap = el('div', 'progress-bar-bg');
   const fill = el('div', 'progress-bar-fill');
@@ -508,6 +540,22 @@ function size(bytes) {
   const mb = bytes / (1024 * 1024);
   if (mb >= 1024) return (mb / 1024).toFixed(2) + ' GB';
   return mb.toFixed(1) + ' MB';
+}
+
+// Percentage change from the original file to the compressed one, as a part for
+// metaLine. A shrunken file is the point of the exercise, so it reads green, and
+// deeper green once it has halved; a file that grew has to be obvious. Returns
+// null when either size is unknown, which is what keeps old jobs from rendering
+// NaN. `approx` marks the live estimate, which is still moving.
+function sizeDelta(source, output, approx) {
+  if (!source || !output) return null;
+  const change = Math.round((output - source) / source * 100);
+  let className = 'delta';
+  if (change > 0) className += ' larger';
+  else if (change <= -50) className += ' smaller major';
+  else if (change < 0) className += ' smaller';
+  // A negative number already prints its own sign; only growth needs a '+'.
+  return { label: (approx ? '~' : '') + (change > 0 ? '+' : '') + change + '%', className };
 }
 
 function date(iso) {
