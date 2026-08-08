@@ -1,583 +1,696 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LAN Video Compressor</title>
-<style>
-  :root {
-    --bg: #0f1115;
-    --panel: #171a21;
-    --border: #2a2e38;
-    --text: #e8e9ec;
-    --muted: #9198a8;
-    --accent: #4f8cff;
-    --accent-dim: #2a4a80;
-    --ok: #34c77b;
-    --err: #ff5c5c;
-    /* Size savings, tiered: a good result and an excellent one share a hue, the
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LAN Video Compressor</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #171a21;
+      --border: #2a2e38;
+      --text: #e8e9ec;
+      --muted: #9198a8;
+      --accent: #4f8cff;
+      --accent-dim: #2a4a80;
+      --ok: #34c77b;
+      --err: #ff5c5c;
+      /* Size savings, tiered: a good result and an excellent one share a hue, the
        excellent one deeper and more saturated. Both are light enough to stay
        readable as small bold text on --panel. */
-    --save: #23cc73;
-    --save-major: #0cb65b;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    display: flex;
-    justify-content: center;
-    padding: 40px 16px;
-  }
-  .card {
-    width: 100%;
-    max-width: 640px;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 28px;
-  }
-  h1 { font-size: 1.25rem; margin: 0 0 4px; }
-  p.sub { color: var(--muted); margin: 0 0 24px; font-size: 0.9rem; }
+      --save: #23cc73;
+      --save-major: #0cb65b;
+    }
 
-  .section { margin-top: 28px; }
-  .section:first-of-type { margin-top: 0; }
-  .section > h2 {
-    font-size: 0.72rem;
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
-    color: var(--muted);
-    font-weight: 600;
-    margin: 0 0 12px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--border);
-  }
-  .section[hidden] { display: none; }
+    * {
+      box-sizing: border-box;
+    }
 
-  .dropzone {
-    border: 2px dashed var(--border);
-    border-radius: 10px;
-    padding: 28px;
-    text-align: center;
-    cursor: pointer;
-    transition: border-color .15s;
-  }
-  .dropzone.drag { border-color: var(--accent); }
-  .dropzone input { display: none; }
-  .filename { margin-top: 10px; color: var(--accent); font-size: 0.9rem; word-break: break-all; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      padding: 40px 16px;
+    }
 
-  .presets { display: flex; gap: 10px; margin: 20px 0; }
-  .preset {
-    flex: 1;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px 10px;
-    text-align: center;
-    cursor: pointer;
-    font-size: 0.85rem;
-  }
-  .preset.selected { border-color: var(--accent); background: var(--accent-dim); }
-  .preset .label { font-weight: 600; margin-bottom: 4px; }
-  .preset .desc { color: var(--muted); font-size: 0.75rem; }
+    .card {
+      width: 100%;
+      max-width: 640px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+    }
 
-  button.submit {
-    width: 100%;
-    padding: 12px;
-    border: none;
-    border-radius: 8px;
-    background: var(--accent);
-    color: white;
-    font-size: 1rem;
-    cursor: pointer;
-    margin-top: 8px;
-  }
-  button.submit:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+    h1 {
+      font-size: 1.25rem;
+      margin: 0 0 4px;
+    }
 
-  .row {
-    padding: 12px 0;
-    border-bottom: 1px solid var(--border);
-  }
-  .row:last-child { border-bottom: none; }
-  .row-main {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-  }
-  .row-name {
-    font-size: 0.9rem;
-    word-break: break-all;
-  }
-  .row-meta {
-    margin-top: 4px;
-    font-size: 0.78rem;
-    color: var(--muted);
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .row-meta .err { color: var(--err); word-break: break-word; }
-  .row-meta .delta { font-weight: 600; }
-  .row-meta .delta.smaller { color: var(--save); }
-  .row-meta .delta.smaller.major { color: var(--save-major); }
-  .row-meta .delta.larger { color: var(--err); }
-  .row-pct { font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
+    p.sub {
+      color: var(--muted);
+      margin: 0 0 24px;
+      font-size: 0.9rem;
+    }
 
-  .progress-bar-bg {
-    width: 100%;
-    height: 6px;
-    border-radius: 6px;
-    background: var(--border);
-    overflow: hidden;
-    margin-top: 8px;
-  }
-  .progress-bar-fill {
-    height: 100%;
-    background: var(--accent);
-    width: 0%;
-    transition: width .3s ease;
-  }
+    .section {
+      margin-top: 28px;
+    }
 
-  .actions { display: flex; gap: 8px; margin-top: 10px; }
-  .actions a, .actions button {
-    font-family: inherit;
-    font-size: 0.78rem;
-    padding: 6px 12px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--text);
-    cursor: pointer;
-    text-decoration: none;
-  }
-  .actions .primary { border-color: var(--ok); color: var(--ok); }
-  .actions .danger { border-color: var(--err); color: var(--err); }
-  .actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .section:first-of-type {
+      margin-top: 0;
+    }
 
-  .empty { color: var(--muted); font-size: 0.85rem; }
-  .banner {
-    margin-top: 16px;
-    padding: 10px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--err);
-    color: var(--err);
-    font-size: 0.85rem;
-  }
-  .banner[hidden] { display: none; }
-</style>
+    .section>h2 {
+      font-size: 0.72rem;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 600;
+      margin: 0 0 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section[hidden] {
+      display: none;
+    }
+
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 28px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .15s;
+    }
+
+    .dropzone.drag {
+      border-color: var(--accent);
+    }
+
+    .dropzone input {
+      display: none;
+    }
+
+    .filename {
+      margin-top: 10px;
+      color: var(--accent);
+      font-size: 0.9rem;
+      word-break: break-all;
+    }
+
+    .presets {
+      display: flex;
+      gap: 10px;
+      margin: 20px 0;
+    }
+
+    .preset {
+      flex: 1;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 10px;
+      text-align: center;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+
+    .preset.selected {
+      border-color: var(--accent);
+      background: var(--accent-dim);
+    }
+
+    .preset .label {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .preset .desc {
+      color: var(--muted);
+      font-size: 0.75rem;
+    }
+
+    button.submit {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      background: var(--accent);
+      color: white;
+      font-size: 1rem;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+
+    button.submit:disabled {
+      background: var(--border);
+      color: var(--muted);
+      cursor: not-allowed;
+    }
+
+    .row {
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .row:last-child {
+      border-bottom: none;
+    }
+
+    .row-main {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .row-name {
+      font-size: 0.9rem;
+      word-break: break-all;
+    }
+
+    .row-meta {
+      margin-top: 4px;
+      font-size: 0.78rem;
+      color: var(--muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .row-meta .err {
+      color: var(--err);
+      word-break: break-word;
+    }
+
+    .row-meta .delta {
+      font-weight: 600;
+    }
+
+    .row-meta .delta.smaller {
+      color: var(--save);
+    }
+
+    .row-meta .delta.smaller.major {
+      color: var(--save-major);
+    }
+
+    .row-meta .delta.larger {
+      color: var(--err);
+    }
+
+    .row-pct {
+      font-size: 0.8rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .progress-bar-bg {
+      width: 100%;
+      height: 6px;
+      border-radius: 6px;
+      background: var(--border);
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width .3s ease;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .actions a,
+    .actions button {
+      font-family: inherit;
+      font-size: 0.78rem;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    .actions .primary {
+      border-color: var(--ok);
+      color: var(--ok);
+    }
+
+    .actions .danger {
+      border-color: var(--err);
+      color: var(--err);
+    }
+
+    .actions button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .empty {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .banner {
+      margin-top: 16px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--err);
+      color: var(--err);
+      font-size: 0.85rem;
+    }
+
+    .banner[hidden] {
+      display: none;
+    }
+  </style>
 </head>
-<body>
-<div class="card">
-  <h1>Video Compressor</h1>
-  <p class="sub">Compress to FHD using GPU acceleration on the local network</p>
 
-  <div class="section">
-    <h2>Input file</h2>
-    <div class="dropzone" id="dropzone">
-      <div>Click to select, or drag a video file here</div>
-      <div class="filename" id="filename"></div>
-      <input type="file" id="fileInput" accept="video/*">
+<body>
+  <div class="card">
+    <h1>Video Compressor</h1>
+    <p class="sub">Compress to FHD using GPU acceleration on the local network</p>
+
+    <div class="section">
+      <h2>Input file</h2>
+      <div class="dropzone" id="dropzone">
+        <div>Click to select, or drag a video file here</div>
+        <div class="filename" id="filename"></div>
+        <input type="file" id="fileInput" accept="video/*">
+      </div>
+
+      <div class="presets" id="presets"></div>
+
+      <button class="submit" id="submitBtn" disabled>Compress</button>
+      <div class="banner" id="banner" hidden></div>
     </div>
 
-    <div class="presets" id="presets"></div>
+    <div class="section" id="progressSection" hidden>
+      <h2>In progress</h2>
+      <div id="progressList"></div>
+    </div>
 
-    <button class="submit" id="submitBtn" disabled>Compress</button>
-    <div class="banner" id="banner" hidden></div>
+    <div class="section" id="failedSection" hidden>
+      <h2>Failed</h2>
+      <div id="failedList"></div>
+    </div>
+
+    <div class="section" id="successSection" hidden>
+      <h2>Success</h2>
+      <div id="successList"></div>
+    </div>
   </div>
 
-  <div class="section" id="progressSection" hidden>
-    <h2>In progress</h2>
-    <div id="progressList"></div>
-  </div>
+  <script>
+    const ACTIVE = ['queued', 'analyzing', 'encoding'];
+    const POLL_ACTIVE_MS = 1000;
+    const POLL_IDLE_MS = 5000;
 
-  <div class="section" id="failedSection" hidden>
-    <h2>Failed</h2>
-    <div id="failedList"></div>
-  </div>
+    let selectedFile = null;
+    let selectedPreset = null;
+    let pollTimer = null;
+    let pollDelay = null;
+    // Uploads in flight, keyed by a client-side id. The server knows nothing about
+    // a job until its bytes have all arrived, so these rows live only here.
+    const uploads = new Map();
 
-  <div class="section" id="successSection" hidden>
-    <h2>Success</h2>
-    <div id="successList"></div>
-  </div>
-</div>
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const filenameEl = document.getElementById('filename');
+    const presetsEl = document.getElementById('presets');
+    const submitBtn = document.getElementById('submitBtn');
+    const banner = document.getElementById('banner');
 
-<script>
-const ACTIVE = ['queued', 'analyzing', 'encoding'];
-const POLL_ACTIVE_MS = 1000;
-const POLL_IDLE_MS = 5000;
+    const sections = {
+      progress: document.getElementById('progressSection'),
+      failed: document.getElementById('failedSection'),
+      success: document.getElementById('successSection'),
+    };
+    const lists = {
+      progress: document.getElementById('progressList'),
+      failed: document.getElementById('failedList'),
+      success: document.getElementById('successList'),
+    };
 
-let selectedFile = null;
-let selectedPreset = null;
-let pollTimer = null;
-let pollDelay = null;
-// Uploads in flight, keyed by a client-side id. The server knows nothing about
-// a job until its bytes have all arrived, so these rows live only here.
-const uploads = new Map();
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('drag');
+      if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length) setFile(fileInput.files[0]);
+    });
 
-const dropzone = document.getElementById('dropzone');
-const fileInput = document.getElementById('fileInput');
-const filenameEl = document.getElementById('filename');
-const presetsEl = document.getElementById('presets');
-const submitBtn = document.getElementById('submitBtn');
-const banner = document.getElementById('banner');
+    function setFile(file) {
+      selectedFile = file;
+      filenameEl.textContent = file.name;
+      updateSubmitState();
+    }
 
-const sections = {
-  progress: document.getElementById('progressSection'),
-  failed: document.getElementById('failedSection'),
-  success: document.getElementById('successSection'),
-};
-const lists = {
-  progress: document.getElementById('progressList'),
-  failed: document.getElementById('failedList'),
-  success: document.getElementById('successList'),
-};
+    function updateSubmitState() {
+      submitBtn.disabled = !(selectedFile && selectedPreset);
+    }
 
-dropzone.addEventListener('click', () => fileInput.click());
-dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag'); });
-dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
-dropzone.addEventListener('drop', (e) => {
-  e.preventDefault();
-  dropzone.classList.remove('drag');
-  if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
-});
-fileInput.addEventListener('change', () => {
-  if (fileInput.files.length) setFile(fileInput.files[0]);
-});
+    function showError(msg) {
+      banner.textContent = msg;
+      banner.hidden = false;
+    }
 
-function setFile(file) {
-  selectedFile = file;
-  filenameEl.textContent = file.name;
-  updateSubmitState();
-}
+    function clearError() {
+      banner.hidden = true;
+    }
 
-function updateSubmitState() {
-  submitBtn.disabled = !(selectedFile && selectedPreset);
-}
+    async function loadPresets() {
+      const res = await fetch('/api/presets');
+      const presets = await res.json();
+      presetsEl.innerHTML = '';
+      presets.forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'preset';
+        div.dataset.key = p.key;
+        div.innerHTML = `<div class="label"></div><div class="desc"></div>`;
+        div.querySelector('.label').textContent = p.label;
+        div.querySelector('.desc').textContent = p.description;
+        div.addEventListener('click', () => {
+          document.querySelectorAll('.preset').forEach(el => el.classList.remove('selected'));
+          div.classList.add('selected');
+          selectedPreset = p.key;
+          updateSubmitState();
+        });
+        presetsEl.appendChild(div);
+      });
+    }
 
-function showError(msg) {
-  banner.textContent = msg;
-  banner.hidden = false;
-}
+    submitBtn.addEventListener('click', () => {
+      if (!selectedFile || !selectedPreset) return;
+      clearError();
+      startUpload(selectedFile, selectedPreset);
 
-function clearError() {
-  banner.hidden = true;
-}
-
-async function loadPresets() {
-  const res = await fetch('/api/presets');
-  const presets = await res.json();
-  presetsEl.innerHTML = '';
-  presets.forEach(p => {
-    const div = document.createElement('div');
-    div.className = 'preset';
-    div.dataset.key = p.key;
-    div.innerHTML = `<div class="label"></div><div class="desc"></div>`;
-    div.querySelector('.label').textContent = p.label;
-    div.querySelector('.desc').textContent = p.description;
-    div.addEventListener('click', () => {
-      document.querySelectorAll('.preset').forEach(el => el.classList.remove('selected'));
-      div.classList.add('selected');
-      selectedPreset = p.key;
+      // Clear the picker so the next file can be queued straight away.
+      selectedFile = null;
+      fileInput.value = '';
+      filenameEl.textContent = '';
       updateSubmitState();
     });
-    presetsEl.appendChild(div);
-  });
-}
 
-submitBtn.addEventListener('click', () => {
-  if (!selectedFile || !selectedPreset) return;
-  clearError();
-  startUpload(selectedFile, selectedPreset);
-
-  // Clear the picker so the next file can be queued straight away.
-  selectedFile = null;
-  fileInput.value = '';
-  filenameEl.textContent = '';
-  updateSubmitState();
-});
-
-// startUpload uses XMLHttpRequest rather than fetch, which cannot report how
-// much of a request body has been sent.
-function startUpload(file, preset) {
-  const key = 'upload-' + Date.now() + '-' + Math.random().toString(36).slice(2);
-  uploads.set(key, { name: file.name, percent: 0 });
-  render();
-
-  const form = new FormData();
-  form.append('file', file);
-  form.append('preset', preset);
-
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', '/api/compress');
-
-  xhr.upload.addEventListener('progress', (e) => {
-    if (!e.lengthComputable) return;
-    const entry = uploads.get(key);
-    if (!entry) return;
-    entry.percent = (e.loaded / e.total) * 100;
-    render();
-  });
-
-  xhr.addEventListener('load', () => {
-    uploads.delete(key);
-    if (xhr.status >= 200 && xhr.status < 300) {
-      refresh();
-    } else {
-      showError(`${file.name}: ${errorFrom(xhr) || 'upload failed'}`);
+    // startUpload uses XMLHttpRequest rather than fetch, which cannot report how
+    // much of a request body has been sent.
+    function startUpload(file, preset) {
+      const key = 'upload-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+      uploads.set(key, { name: file.name, percent: 0 });
       render();
+
+      const form = new FormData();
+      form.append('file', file);
+      form.append('preset', preset);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/compress');
+
+      xhr.upload.addEventListener('progress', (e) => {
+        if (!e.lengthComputable) return;
+        const entry = uploads.get(key);
+        if (!entry) return;
+        entry.percent = (e.loaded / e.total) * 100;
+        render();
+      });
+
+      xhr.addEventListener('load', () => {
+        uploads.delete(key);
+        if (xhr.status >= 200 && xhr.status < 300) {
+          refresh();
+        } else {
+          showError(`${file.name}: ${errorFrom(xhr) || 'upload failed'}`);
+          render();
+        }
+      });
+
+      xhr.addEventListener('error', () => {
+        uploads.delete(key);
+        showError(`${file.name}: upload failed`);
+        render();
+      });
+
+      xhr.send(form);
     }
-  });
 
-  xhr.addEventListener('error', () => {
-    uploads.delete(key);
-    showError(`${file.name}: upload failed`);
-    render();
-  });
+    function errorFrom(xhr) {
+      try {
+        return JSON.parse(xhr.responseText).error;
+      } catch {
+        return null;
+      }
+    }
 
-  xhr.send(form);
-}
+    async function refresh() {
+      let jobs;
+      try {
+        const res = await fetch('/api/jobs');
+        if (!res.ok) return;
+        jobs = await res.json();
+      } catch {
+        return; // a dropped poll is not worth surfacing; the next one will catch up
+      }
+      render(jobs);
+    }
 
-function errorFrom(xhr) {
-  try {
-    return JSON.parse(xhr.responseText).error;
-  } catch {
-    return null;
-  }
-}
+    let lastJobs = [];
 
-async function refresh() {
-  let jobs;
-  try {
-    const res = await fetch('/api/jobs');
-    if (!res.ok) return;
-    jobs = await res.json();
-  } catch {
-    return; // a dropped poll is not worth surfacing; the next one will catch up
-  }
-  render(jobs);
-}
+    function render(jobs) {
+      if (jobs) lastJobs = jobs;
+      jobs = lastJobs;
 
-let lastJobs = [];
+      const inProgress = jobs.filter(j => ACTIVE.includes(j.status));
+      const failed = jobs.filter(j => j.status === 'error');
+      const success = jobs.filter(j => j.status === 'done');
 
-function render(jobs) {
-  if (jobs) lastJobs = jobs;
-  jobs = lastJobs;
+      lists.progress.replaceChildren(
+        ...[...uploads.values()].map(uploadRow),
+        ...inProgress.map(jobRow),
+      );
+      lists.failed.replaceChildren(...failed.map(failedRow));
+      lists.success.replaceChildren(...success.map(successRow));
 
-  const inProgress = jobs.filter(j => ACTIVE.includes(j.status));
-  const failed = jobs.filter(j => j.status === 'error');
-  const success = jobs.filter(j => j.status === 'done');
+      sections.progress.hidden = lists.progress.childElementCount === 0;
+      sections.failed.hidden = failed.length === 0;
+      sections.success.hidden = success.length === 0;
 
-  lists.progress.replaceChildren(
-    ...[...uploads.values()].map(uploadRow),
-    ...inProgress.map(jobRow),
-  );
-  lists.failed.replaceChildren(...failed.map(failedRow));
-  lists.success.replaceChildren(...success.map(successRow));
+      schedulePoll(inProgress.length > 0 || uploads.size > 0);
+    }
 
-  sections.progress.hidden = lists.progress.childElementCount === 0;
-  sections.failed.hidden = failed.length === 0;
-  sections.success.hidden = success.length === 0;
+    function uploadRow(u) {
+      const row = el('div', 'row');
+      const main = el('div', 'row-main');
+      main.append(text('div', 'row-name', u.name), text('div', 'row-pct', pct(u.percent)));
+      row.append(main, text('div', 'row-meta', 'uploading'), bar(u.percent));
+      return row;
+    }
 
-  schedulePoll(inProgress.length > 0 || uploads.size > 0);
-}
+    function jobRow(j) {
+      const row = el('div', 'row');
+      const main = el('div', 'row-main');
+      const showPct = j.status === 'encoding';
+      main.append(
+        text('div', 'row-name', j.filename),
+        text('div', 'row-pct', showPct ? pct(j.overall_progress) : ''),
+      );
 
-function uploadRow(u) {
-  const row = el('div', 'row');
-  const main = el('div', 'row-main');
-  main.append(text('div', 'row-name', u.name), text('div', 'row-pct', pct(u.percent)));
-  row.append(main, text('div', 'row-meta', 'uploading'), bar(u.percent));
-  return row;
-}
+      // The estimate is withheld until the encode is a few percent in, so the live
+      // delta appears alongside it and settles as the extrapolation converges.
+      const meta = metaLine([
+        statusLabel(j.status),
+        j.estimated_size_mb ? `est. ${j.estimated_size_mb} MB` : null,
+        sizeDelta(j.source_size, j.estimated_size_mb * 1024 * 1024, true),
+        j.encoder,
+      ]);
 
-function jobRow(j) {
-  const row = el('div', 'row');
-  const main = el('div', 'row-main');
-  const showPct = j.status === 'encoding';
-  main.append(
-    text('div', 'row-name', j.filename),
-    text('div', 'row-pct', showPct ? pct(j.overall_progress) : ''),
-  );
+      row.append(main, meta, bar(showPct ? j.overall_progress : 0));
+      return row;
+    }
 
-  // The estimate is withheld until the encode is a few percent in, so the live
-  // delta appears alongside it and settles as the extrapolation converges.
-  const meta = metaLine([
-    statusLabel(j.status),
-    j.estimated_size_mb ? `est. ${j.estimated_size_mb} MB` : null,
-    sizeDelta(j.source_size, j.estimated_size_mb * 1024 * 1024, true),
-    j.encoder,
-  ]);
+    function failedRow(j) {
+      const row = el('div', 'row');
+      const main = el('div', 'row-main');
+      main.append(text('div', 'row-name', j.filename || '(unknown file)'));
+      row.append(main);
 
-  row.append(main, meta, bar(showPct ? j.overall_progress : 0));
-  return row;
-}
+      const meta = el('div', 'row-meta');
+      meta.append(text('span', '', date(j.created_at)));
+      if (j.error) meta.append(text('span', 'err', j.error));
+      row.append(meta);
 
-function failedRow(j) {
-  const row = el('div', 'row');
-  const main = el('div', 'row-main');
-  main.append(text('div', 'row-name', j.filename || '(unknown file)'));
-  row.append(main);
+      const actions = el('div', 'actions');
+      if (j.can_retry) {
+        actions.append(button('Retry', '', async (btn) => {
+          btn.disabled = true;
+          const res = await fetch(`/api/jobs/${j.job_id}/retry`, { method: 'POST' });
+          if (!res.ok) {
+            showError(`retry failed: ${(await res.json()).error}`);
+            btn.disabled = false;
+          }
+          refresh();
+        }));
+      }
+      actions.append(button('Remove', 'danger', (btn) => removeJob(j, btn, 'Remove this failed job and its uploaded file?')));
+      row.append(actions);
+      return row;
+    }
 
-  const meta = el('div', 'row-meta');
-  meta.append(text('span', '', date(j.created_at)));
-  if (j.error) meta.append(text('span', 'err', j.error));
-  row.append(meta);
+    function successRow(j) {
+      const row = el('div', 'row');
+      const main = el('div', 'row-main');
+      main.append(text('div', 'row-name', j.filename));
+      row.append(main);
 
-  const actions = el('div', 'actions');
-  if (j.can_retry) {
-    actions.append(button('Retry', '', async (btn) => {
+      const sizes = j.source_size && j.output_size
+        ? `${size(j.source_size)} → ${size(j.output_size)}`
+        : size(j.output_size);
+      row.append(metaLine([
+        sizes,
+        sizeDelta(j.source_size, j.output_size),
+        date(j.created_at),
+      ]));
+
+      const actions = el('div', 'actions');
+      const link = el('a', 'primary');
+      link.textContent = 'Download';
+      link.href = `/api/download/${j.job_id}`;
+      link.setAttribute('download', '');
+      actions.append(link);
+      actions.append(button('Delete', 'danger', (btn) => removeJob(j, btn, 'Delete this compressed file? It cannot be recovered.')));
+      row.append(actions);
+      return row;
+    }
+
+    async function removeJob(j, btn, confirmation) {
+      if (!confirm(confirmation)) return;
       btn.disabled = true;
-      const res = await fetch(`/api/jobs/${j.job_id}/retry`, { method: 'POST' });
+      const res = await fetch(`/api/jobs/${j.job_id}`, { method: 'DELETE' });
       if (!res.ok) {
-        showError(`retry failed: ${(await res.json()).error}`);
+        showError(`delete failed: ${(await res.json()).error}`);
         btn.disabled = false;
       }
       refresh();
-    }));
-  }
-  actions.append(button('Remove', 'danger', (btn) => removeJob(j, btn, 'Remove this failed job and its uploaded file?')));
-  row.append(actions);
-  return row;
-}
+    }
 
-function successRow(j) {
-  const row = el('div', 'row');
-  const main = el('div', 'row-main');
-  main.append(text('div', 'row-name', j.filename));
-  row.append(main);
+    // --- small DOM helpers -------------------------------------------------
+    // Filenames and ffmpeg error text are untrusted, so every dynamic value goes
+    // in as textContent, never as HTML.
 
-  const sizes = j.source_size && j.output_size
-    ? `${size(j.source_size)} → ${size(j.output_size)}`
-    : size(j.output_size);
-  row.append(metaLine([
-    sizes,
-    sizeDelta(j.source_size, j.output_size),
-    date(j.created_at),
-  ]));
+    function el(tag, className) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      return node;
+    }
 
-  const actions = el('div', 'actions');
-  const link = el('a', 'primary');
-  link.textContent = 'Download';
-  link.href = `/api/download/${j.job_id}`;
-  link.setAttribute('download', '');
-  actions.append(link);
-  actions.append(button('Delete', 'danger', (btn) => removeJob(j, btn, 'Delete this compressed file? It cannot be recovered.')));
-  row.append(actions);
-  return row;
-}
+    function text(tag, className, value) {
+      const node = el(tag, className);
+      node.textContent = value;
+      return node;
+    }
 
-async function removeJob(j, btn, confirmation) {
-  if (!confirm(confirmation)) return;
-  btn.disabled = true;
-  const res = await fetch(`/api/jobs/${j.job_id}`, { method: 'DELETE' });
-  if (!res.ok) {
-    showError(`delete failed: ${(await res.json()).error}`);
-    btn.disabled = false;
-  }
-  refresh();
-}
+    function button(label, className, onClick) {
+      const b = el('button', className);
+      b.textContent = label;
+      b.addEventListener('click', () => onClick(b));
+      return b;
+    }
 
-// --- small DOM helpers -------------------------------------------------
-// Filenames and ffmpeg error text are untrusted, so every dynamic value goes
-// in as textContent, never as HTML.
+    // metaLine builds a .row-meta line from a list of parts, skipping empty ones and
+    // separating the rest with dots. A part is either a plain string or a
+    // {label, className} object, which is how a piece gets its own colour.
+    function metaLine(parts) {
+      const wrap = el('div', 'row-meta');
+      parts.filter(Boolean).forEach((part, i) => {
+        if (i) wrap.append(text('span', '', '·'));
+        wrap.append(typeof part === 'string'
+          ? text('span', '', part)
+          : text('span', part.className, part.label));
+      });
+      return wrap;
+    }
 
-function el(tag, className) {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  return node;
-}
+    function bar(percent) {
+      const wrap = el('div', 'progress-bar-bg');
+      const fill = el('div', 'progress-bar-fill');
+      fill.style.width = (percent || 0) + '%';
+      wrap.append(fill);
+      return wrap;
+    }
 
-function text(tag, className, value) {
-  const node = el(tag, className);
-  node.textContent = value;
-  return node;
-}
+    function statusLabel(status) {
+      return {
+        queued: 'queued',
+        analyzing: 'analyzing video',
+        encoding: 'compressing',
+      }[status] || status;
+    }
 
-function button(label, className, onClick) {
-  const b = el('button', className);
-  b.textContent = label;
-  b.addEventListener('click', () => onClick(b));
-  return b;
-}
+    function pct(value) {
+      return (value || 0).toFixed(0) + '%';
+    }
 
-// metaLine builds a .row-meta line from a list of parts, skipping empty ones and
-// separating the rest with dots. A part is either a plain string or a
-// {label, className} object, which is how a piece gets its own colour.
-function metaLine(parts) {
-  const wrap = el('div', 'row-meta');
-  parts.filter(Boolean).forEach((part, i) => {
-    if (i) wrap.append(text('span', '', '·'));
-    wrap.append(typeof part === 'string'
-      ? text('span', '', part)
-      : text('span', part.className, part.label));
-  });
-  return wrap;
-}
+    function size(bytes) {
+      if (!bytes) return '';
+      const mb = bytes / (1024 * 1024);
+      if (mb >= 1024) return (mb / 1024).toFixed(2) + ' GB';
+      return mb.toFixed(1) + ' MB';
+    }
 
-function bar(percent) {
-  const wrap = el('div', 'progress-bar-bg');
-  const fill = el('div', 'progress-bar-fill');
-  fill.style.width = (percent || 0) + '%';
-  wrap.append(fill);
-  return wrap;
-}
+    // Percentage change from the original file to the compressed one, as a part for
+    // metaLine. A shrunken file is the point of the exercise, so it reads green, and
+    // deeper green once it has halved; a file that grew has to be obvious. Returns
+    // null when either size is unknown, which is what keeps old jobs from rendering
+    // NaN. `approx` marks the live estimate, which is still moving.
+    function sizeDelta(source, output, approx) {
+      if (!source || !output) return null;
+      const change = Math.round((output - source) / source * 100);
+      let className = 'delta';
+      if (change > 0) className += ' larger';
+      else if (change <= -50) className += ' smaller major';
+      else if (change < 0) className += ' smaller';
+      // A negative number already prints its own sign; only growth needs a '+'.
+      return { label: (approx ? '~' : '') + (change > 0 ? '+' : '') + change + '%', className };
+    }
 
-function statusLabel(status) {
-  return {
-    queued: 'queued',
-    analyzing: 'analyzing video',
-    encoding: 'compressing',
-  }[status] || status;
-}
+    function date(iso) {
+      const d = new Date(iso);
+      return isNaN(d) ? '' : d.toLocaleString(undefined, {
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+      });
+    }
 
-function pct(value) {
-  return (value || 0).toFixed(0) + '%';
-}
+    // schedulePoll keeps a fast cadence while work is running and drops to a slow
+    // one when idle, so an open tab still notices jobs started from another device.
+    function schedulePoll(active) {
+      const delay = active ? POLL_ACTIVE_MS : POLL_IDLE_MS;
+      if (pollTimer && pollDelay === delay) return;
+      clearInterval(pollTimer);
+      pollDelay = delay;
+      pollTimer = setInterval(refresh, delay);
+    }
 
-function size(bytes) {
-  if (!bytes) return '';
-  const mb = bytes / (1024 * 1024);
-  if (mb >= 1024) return (mb / 1024).toFixed(2) + ' GB';
-  return mb.toFixed(1) + ' MB';
-}
-
-// Percentage change from the original file to the compressed one, as a part for
-// metaLine. A shrunken file is the point of the exercise, so it reads green, and
-// deeper green once it has halved; a file that grew has to be obvious. Returns
-// null when either size is unknown, which is what keeps old jobs from rendering
-// NaN. `approx` marks the live estimate, which is still moving.
-function sizeDelta(source, output, approx) {
-  if (!source || !output) return null;
-  const change = Math.round((output - source) / source * 100);
-  let className = 'delta';
-  if (change > 0) className += ' larger';
-  else if (change <= -50) className += ' smaller major';
-  else if (change < 0) className += ' smaller';
-  // A negative number already prints its own sign; only growth needs a '+'.
-  return { label: (approx ? '~' : '') + (change > 0 ? '+' : '') + change + '%', className };
-}
-
-function date(iso) {
-  const d = new Date(iso);
-  return isNaN(d) ? '' : d.toLocaleString(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
-}
-
-// schedulePoll keeps a fast cadence while work is running and drops to a slow
-// one when idle, so an open tab still notices jobs started from another device.
-function schedulePoll(active) {
-  const delay = active ? POLL_ACTIVE_MS : POLL_IDLE_MS;
-  if (pollTimer && pollDelay === delay) return;
-  clearInterval(pollTimer);
-  pollDelay = delay;
-  pollTimer = setInterval(refresh, delay);
-}
-
-loadPresets();
-refresh();
-</script>
+    loadPresets();
+    refresh();
+  </script>
 </body>
+
 </html>
